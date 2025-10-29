@@ -1,0 +1,71 @@
+/* 基本頁面設置 */
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background-color: #f4f7f6;
+    margin: 0;
+    padding: 20px;
+}
+
+.container {
+    max-width: 800px;
+    margin: 20px auto;
+    padding: 20px;
+    background-color: #ffffff;
+    border-radius: 8px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
+h1, h2 {
+    color: #333;
+}
+
+hr {
+    border: none;
+    border-top: 1px solid #eee;
+    margin: 20px 0;
+}
+
+/* 按鈕組 */
+.button-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px; /* 按鈕之間的間距 */
+}
+
+/* 通用按鈕樣式 */
+.btn {
+    display: inline-block;
+    text-decoration: none; /* 移除 a 標籤的底線 */
+    padding: 12px 20px;
+    font-size: 16px;
+    font-weight: 500;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    text-align: center;
+    transition: background-color 0.2s ease-in-out;
+    background-color: #e0e0e0;
+    color: #333;
+}
+
+/* 主要按鈕 (例如: 輸出) */
+.btn-primary {
+    background-color: #007bff;
+    color: white;
+}
+.btn-primary:hover {
+    background-color: #0056b3;
+}
+
+/* 次要按鈕 (例如: 導航) */
+.btn-secondary {
+    background-color: #6c757d;
+    color: white;
+}
+.btn-secondary:hover {
+    background-color: #5a6268;
+}
+
+.btn:hover {
+    background-color: #c7c7c7;
+}
