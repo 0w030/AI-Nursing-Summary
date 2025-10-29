@@ -1,0 +1,10 @@
+# Python 函式庫列表
+
+# 資料庫連線驅動
+psycopg2-binary
+
+# OpenAI API
+openai
+
+# 讀取 .env 檔案
+python-dotenv
