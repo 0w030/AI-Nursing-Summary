@@ -5,11 +5,11 @@
             "previewLimit": 50,
             "server": "gondola.proxy.rlwy.net",
             "port": 25890,
-            "askForPassword": true,
             "driver": "PostgreSQL",
             "database": "railway",
             "username": "postgres",
-            "name": "Railway-Summarizer-DB"
+            "name": "Railway-Summarizer-DB",
+            "password": "TWIjLcLxInGJXJoKhZwejbdRuOpKQZAU"
         }
     ]
 }
