@@ -4,6 +4,8 @@ import os
 from dotenv import load_dotenv
 import psycopg2
 from psycopg2 import sql
+import csv
+import random
 
 # 載入環境變數
 load_dotenv()
@@ -131,3 +133,6 @@ if __name__ == '__main__':
         conn.close()
     else:
         print("連線失敗，請檢查 .env 設定。")
+
+
+     
