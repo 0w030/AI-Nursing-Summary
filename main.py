@@ -1,71 +1,54 @@
 # main.py
 
+import sys
 import os
 from dotenv import load_dotenv
-from db.db_connector import execute_sql_script, fetch_reports_by_patient, save_summary
-from ai.ai_summarizer import format_reports_to_prompt, generate_summary
-from data.data_processor import insert_mock_data
 
-# 專案設定
-SCHEMA_FILE = 'sql/schema.sql'
-TEST_PATIENT_ID = 'P001'
+# 引入我們剛剛建立的查詢服務 (針對真實資料表)
+from db.patient_service import get_patient_full_history
 
-def setup_environment():
-    """初始化環境設定，包括載入環境變數和建立資料表結構"""
-    print("--- 1. 環境初始化 ---")
+# 引入 AI 模組 (先保留引用，暫不執行，或是稍後再打開)
+from ai.ai_summarizer import generate_nursing_summary
+
+# 設定真實存在的病歷號 (來自您的 CSV)
+TEST_PATIENT_ID = '0002452972' 
+
+def main():
+    print(f"=== 啟動 AI 護理摘要系統 (目標病歷號: {TEST_PATIENT_ID}) ===")
+
+    # 1. 環境初始化 (只做最基本的載入變數)
     load_dotenv()
     
-    # 確保資料庫結構存在
-    # 注意：首次運行時，請確保資料庫中沒有舊的同名表格，否則會失敗
-    # 建議在 schema.sql 中加入 DROP TABLE IF EXISTS examination_reports;
-    if execute_sql_script(SCHEMA_FILE):
-        print("資料庫結構建立/檢查完成。")
+    # 2. 從資料庫撈取完整病程 (使用新的 patient_service)
+    print("1. 正在從 Railway 資料庫撈取病歷資料...")
+    patient_data = get_patient_full_history(TEST_PATIENT_ID)
+
+    if not patient_data:
+        print("❌ 錯誤：找不到該病患資料，請確認 ID 是否正確。")
+        return
+
+    # 顯示撈取結果統計
+    n_count = len(patient_data['nursing'])
+    v_count = len(patient_data['vitals'])
+    l_count = len(patient_data['labs'])
+    print(f"✅ 撈取成功！資料統計：")
+    print(f"   - 護理紀錄: {n_count} 筆")
+    print(f"   - 生理監測: {v_count} 筆")
+    print(f"   - 檢驗報告: {l_count} 筆")
+
+    # 3. (AI 部分) 呼叫 ChatGPT
+    # 如果您暫時不想跑 AI，可以把下面這幾行註解掉
+    if os.getenv("OPENAI_API_KEY"):
+        print("\n2. 正在呼叫 AI 生成摘要 (這可能需要幾秒鐘)...")
+        summary = generate_nursing_summary(TEST_PATIENT_ID, patient_data)
         
-        # 插入模擬數據（僅用於首次測試）
-        # 請確保在每次測試前資料庫是清空的，避免重複插入
-        insert_mock_data()
+        print("\n" + "="*40)
+        print("       🚑 急診病程摘要 (AI Generated)")
+        print("="*40)
+        print(summary)
+        print("="*40)
     else:
-        print("環境設定失敗，請檢查資料庫連線或 SQL 腳本。")
-        return False
-    return True
-
-def run_summarizer_workflow(patient_id):
-    """
-    執行完整的報告摘要工作流：讀取 -> 格式化 -> AI摘要 -> 儲存。
-    """
-    print(f"\n--- 2. 開始摘要工作流 (病患 ID: {patient_id}) ---")
-
-    # 步驟 1: 從資料庫讀取報告數據
-    reports = fetch_reports_by_patient(patient_id)
-    if not reports:
-        print("錯誤: 找不到該病患的任何報告。")
-        return
-
-    print(f"成功讀取 {len(reports)} 份報告。")
-    
-    # 步驟 2: 格式化數據為 Prompt
-    prompt = format_reports_to_prompt(reports)
-    print("\n--- 3. Prompt 生成完成，準備呼叫 AI ---")
-    
-    # 步驟 3: 呼叫 AI API 生成摘要
-    summary_text = generate_summary(prompt)
-    
-    if summary_text.startswith("AI 摘要生成錯誤"):
-        print(summary_text)
-        return
-    
-    print("\n--- 4. AI 摘要結果 ---")
-    print(summary_text)
-    
-    # 步驟 5: 將摘要儲存回資料庫
-    # 這裡我們只將摘要儲存到第一份報告的欄位，但在實際應用中，
-    # 您可能需要創建一個獨立的 '病程總結' 記錄。
-    first_report_id = reports[0]['report_id']
-    save_summary(first_report_id, summary_text)
-    
-    print("\n--- 5. 摘要工作流完成 ---")
-
+        print("\n⚠️ 未偵測到 OPENAI_API_KEY，跳過 AI 摘要生成步驟。")
 
 if __name__ == '__main__':
-    if setup_environment():
-        run_summarizer_workflow(TEST_PATIENT_ID)
+    main()
