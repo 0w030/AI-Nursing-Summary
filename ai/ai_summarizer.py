@@ -1,88 +1,73 @@
 # /ai/ai_summarizer.py
 
 import os
+import json
 from openai import OpenAI
 from dotenv import load_dotenv
-import json
+from data.metadata import get_chinese_name
 
 load_dotenv()
 
-def format_reports_to_prompt(reports_data: list) -> str:
+def generate_nursing_summary(patient_id, patient_data):
     """
-    將多筆報告數據格式化成一個連貫的 Prompt 文本，適合送給 ChatGPT。
+    接收病患的完整結構化資料，發送給 OpenAI 生成護理摘要。
     """
-    if not reports_data:
-        return "找不到任何報告數據，無法生成摘要。"
+    if not patient_data:
+        return "錯誤：無資料可分析。"
 
-    prompt_parts = [
-        "請擔任一位資深的臨床醫生。您的任務是根據以下病患的歷史檢查報告，生成一份連貫的病程摘要。\n",
-        "摘要應涵蓋以下重點：\n",
-        "1. 病程時間軸：按日期順序，指出關鍵檢查結果的變化趨勢。\n",
-        "2. 異常重點：突顯在不同時間點出現的異常或值得關注的指標。\n",
-        "3. 簡短結論：對整體病程變化給出一個簡潔的總結。\n\n",
-        "--- 結構化報告數據開始 ---\n"
-    ]
-
-    # 迭代每一筆報告數據
-    for report in reports_data:
-        # 將 JSONB 數據轉換為格式化的字串
-        structured_data_str = json.dumps(report['data'], indent=2, ensure_ascii=False)
-        
-        report_text = f"""
-日期: {report['date']}
-檢查類型: {report['type']}
-報告ID: {report['report_id']}
-結構化結果:
-{structured_data_str}
-----------------------------------
-"""
-        prompt_parts.append(report_text)
+    # 1. 建構 Prompt 內容
+    # 將 Python 字典轉換成易讀的文字格式
     
-    prompt_parts.append("--- 結構化報告數據結束 ---\n\n")
-    prompt_parts.append("請開始生成連貫的病程摘要：")
+    data_text = f"=== 病患 ID: {patient_id} 急診病程資料 ===\n\n"
+
+    # A. 護理紀錄
+    data_text += "【護理紀錄 / 主訴】\n"
+    for item in patient_data.get('nursing', []):
+        data_text += f"- 時間: {item['PROCDTTM']}\n"
+        data_text += f"  主訴: {item['SUBJECT']}\n"
+        data_text += f"  診斷: {item['DIAGNOSIS']}\n"
     
-    return "".join(prompt_parts)
+    # B. 生理監測
+    data_text += "\n【生理徵象 (Vital Signs)】\n"
+    for item in patient_data.get('vitals', []):
+        data_text += f"- 時間: {item['PROCDTTM']} | "
+        # 使用 metadata 翻譯欄位名稱 (這裡示範手動組裝，比較簡潔)
+        data_text += f"體溫: {item['ETEMPUTER']} | 脈搏: {item['EPLUSE']} | "
+        data_text += f"BP: {item['EPRESSURE']}/{item['EDIASTOLIC']} | SpO2: {item['ESAO2']} | GCS: {item['GCS']}\n"
 
+    # C. 檢驗報告
+    data_text += "\n【檢驗報告 (Lab Data)】\n"
+    for item in patient_data.get('labs', []):
+        data_text += f"- 時間: {item['CHRCPDTM']} | 項目: {item['CHHEAD']} | 數值: {item['CHVAL']} {item['CHUNIT']} (參考: {item['REF_RANGE']})\n"
 
-def generate_summary(prompt_text: str) -> str:
+    # 2. 設定 System Prompt (AI 的角色與任務)
+    system_prompt = """
+    你是一位專業的急診專科護理師或醫師。
+    你的任務是閱讀該病患在急診的完整病程資料（包含護理紀錄、生命徵象、檢驗數值），
+    並撰寫一份結構清晰的「急診病程摘要 (ER Summary)」。
+
+    摘要要求：
+    1. 【病況概述】：簡述病人主訴及檢傷狀況。
+    2. 【重要發現】：
+       - 指出生命徵象的異常趨勢（例如：血壓是否持續下降、有無發燒）。
+       - 標記關鍵的異常檢驗數值（例如：WBC過高、肌酸酐異常），並解讀其臨床意義。
+    3. 【處置與結果】：根據護理紀錄，總結病人接受了哪些處置，以及病情的後續變化。
+    4. 語氣專業、客觀，使用台灣醫療慣用術語。
     """
-    呼叫 OpenAI API，生成摘要。
-    """
-    if not os.getenv("OPENAI_API_KEY"):
-        return "錯誤: OPENAI_API_KEY 未設定。"
 
+    # 3. 呼叫 OpenAI API
     client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-    model_name = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-
-    try:
-        response = client.chat.completions.create(
-            model=model_name,
-            messages=[
-                {"role": "system", "content": "您是一位專業且客觀的醫療報告分析師。"},
-                {"role": "user", "content": prompt_text}
-            ],
-            temperature=0.3, # 設置較低的溫度以確保摘要內容客觀和準確
-            max_tokens=1000 
-        )
-        
-        return response.choices[0].message.content.strip()
-
-    except Exception as e:
-        print(f"OpenAI API 呼叫失敗: {e}")
-        return f"AI 摘要生成錯誤: {e}"
-
-
-if __name__ == '__main__':
-    # 測試 Prompt 格式化
-    sample_reports = [
-        {'report_id': 1, 'date': '2025-05-01', 'type': '血液檢查', 'data': {"WBC": 12.5, "RBC": 4.8, "備註": "輕微發炎"}},
-        {'report_id': 2, 'date': '2025-05-15', 'type': '血液檢查', 'data': {"WBC": 8.1, "RBC": 4.9, "備註": "指標趨於穩定"}}
-    ]
-    test_prompt = format_reports_to_prompt(sample_reports)
-    print("--- 測試生成的 Prompt ---")
-    print(test_prompt)
     
-    # 實際呼叫 API 測試 (需要有效的 API Key)
-    # print("\n--- 測試 AI 摘要生成 ---")
-    # test_summary = generate_summary(test_prompt)
-    # print(test_summary)
+    try:
+        print("--- 正在呼叫 ChatGPT 生成摘要 (請稍候)... ---")
+        response = client.chat.completions.create(
+            model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": data_text}
+            ],
+            temperature=0.3, # 低溫，保持客觀
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"AI 生成失敗: {e}"
