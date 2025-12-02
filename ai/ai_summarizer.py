@@ -55,13 +55,18 @@ def generate_nursing_summary(patient_id, patient_data):
     4. 語氣專業、客觀，使用台灣醫療慣用術語。
     """
 
-    # 3. 呼叫 OpenAI API
-    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    # 3. 呼叫 AI API (修改為 Groq)
+    # 使用 OpenAI SDK，但指向 Groq 的伺服器地址
+    client = OpenAI(
+        api_key=os.getenv("GROQ_API_KEY"), 
+        base_url="https://api.groq.com/openai/v1"
+    )
     
     try:
-        print("--- 正在呼叫 ChatGPT 生成摘要 (請稍候)... ---")
+        print("--- 正在呼叫 Groq AI (Llama 3) 生成摘要... ---")
         response = client.chat.completions.create(
-            model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+            # 指定 Groq 支援的模型名稱 (Llama 3.3 70B 是目前最強的免費開源模型)
+            model="llama-3.3-70b-versatile",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": data_text}
