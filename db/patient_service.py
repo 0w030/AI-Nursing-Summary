@@ -157,6 +157,47 @@ def translate_to_chinese_view(data_list):
         view_list.append(new_item)
     return view_list
 
+def get_all_patients_overview():
+    """
+    掃描資料庫 (以 ENSDATA 為主)，列出所有病患清單及其就診時間範圍。
+    用於前端顯示「病患儀表板」。
+    """
+    conn = get_db_connection()
+    if not conn: return []
+
+    overview_list = []
+    try:
+        with conn.cursor() as cur:
+            # 我們從護理紀錄 (ENSDATA) 撈取，因為它通常代表一次完整的就診
+            # 統計每個病人的：最早紀錄時間、最晚紀錄時間、紀錄總筆數
+            query = """
+                SELECT PATID, 
+                       MIN(PROCDTTM) as start_time, 
+                       MAX(PROCDTTM) as end_time, 
+                       COUNT(*) as record_count
+                FROM ENSDATA
+                GROUP BY PATID
+                ORDER BY start_time DESC
+                LIMIT 50; -- 限制顯示最近的 50 位病人，避免資料太多跑不動
+            """
+            cur.execute(query)
+            rows = cur.fetchall()
+            
+            for row in rows:
+                overview_list.append({
+                    "病歷號": row[0],
+                    "最早紀錄": row[1],
+                    "最晚紀錄": row[2],
+                    "資料筆數": row[3]
+                })
+        return overview_list
+
+    except psycopg2.Error as e:
+        print(f"❌ 查詢病患清單失敗: {e}")
+        return []
+    finally:
+        conn.close()
+
 # ==========================================
 # 測試區塊
 # ==========================================
