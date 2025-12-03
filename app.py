@@ -22,7 +22,7 @@ def format_time_str(raw_time):
     return f"{s[:4]}-{s[4:6]}-{s[6:8]} {s[8:10]}:{s[10:12]}"
 
 # ==========================================
-# 1. 載入資料庫現有病患
+# 1. 載入資料庫現有病患 (快取)
 # ==========================================
 @st.cache_data(ttl=60)
 def load_patient_list():
@@ -82,15 +82,39 @@ with st.sidebar:
     
     st.divider()
 
-    # === 摘要格式 ===
-    st.subheader("📝 摘要格式")
+    # === 修改：摘要格式設定區 ===
+    st.subheader("📝 摘要設定")
+    
+    # 1. 選擇內容模板 (Template)
     template_option = st.radio(
-        "請選擇生成模板：",
-        ["一般摘要 (General)", "SOAP 護理記錄"],
+        "1. 請選擇內容模板：",
+        [
+            "📋 一般摘要 (General)", 
+            # "📝 短文敘述 (Narrative)", <--- 移除此項，改為下方風格選項
+            "🧼 SOAP 護理記錄", 
+            "🔄 ISBAR 交班報告", 
+            "👨‍⚕️ 專科會診摘要", 
+            "🚑 轉診/出院摘要"
+        ],
         index=0
     )
-    template_map = {"一般摘要 (General)": "general", "SOAP 護理記錄": "soap"}
-    selected_template = template_map[template_option]
+    
+    # 2. 選擇呈現風格 (Style) - 新增此功能
+    style_option = st.radio(
+        "2. 請選擇呈現方式：",
+        ["🔹 列點式 (Bullet Points)", "✍️ 短文式 (Narrative)"],
+        index=0
+    )
+
+    # 對應後端的 key
+    template_map = {
+        "📋 一般摘要 (General)": "general", 
+        "🧼 SOAP 護理記錄": "soap",
+        "🔄 ISBAR 交班報告": "isbar",
+        "👨‍⚕️ 專科會診摘要": "consult",
+        "🚑 轉診/出院摘要": "discharge"
+    }
+    selected_template = template_map.get(template_option, "general")
     
     st.divider()
     
@@ -138,9 +162,6 @@ with st.sidebar:
 if target_patient_id:
     st.markdown("### 2️⃣ 生成摘要")
     
-    # === 修改重點：使用 Session State 管理步驟 ===
-    # 我們不直接生成摘要，而是先進入「預覽模式」
-    
     # 初始化 session state
     if "step" not in st.session_state: st.session_state.step = 1
     if "custom_prompt" not in st.session_state: st.session_state.custom_prompt = ""
@@ -165,10 +186,31 @@ if target_patient_id:
         else:
             # 儲存資料到 session state
             st.session_state.patient_data = patient_data
-            # 預載入 System Prompt 到編輯區
-            st.session_state.custom_prompt = SYSTEM_PROMPTS[selected_template]
-            st.session_state.step = 2 # 進入第二步
-            st.rerun() # 重新整理頁面以顯示新內容
+            
+            # === 修改重點：根據選擇的風格，組合出初始 Prompt ===
+            base_prompt = SYSTEM_PROMPTS.get(selected_template, "")
+            
+            # 根據風格附加額外指令
+            style_instruction = ""
+            if style_option == "✍️ 短文式 (Narrative)":
+                style_instruction = """
+                
+                **【特別格式要求】**：
+                請將上述內容整合為一篇**流暢、連貫的短文敘述**。
+                - **禁止使用列點 (Bullet points)**：請使用完整的句子和段落結構。
+                - **故事性敘述**：將數據自然地融入句子中，不要單獨列出。
+                """
+            else:
+                style_instruction = """
+                
+                **【特別格式要求】**：
+                請務必使用**列點 (Bullet points)** 方式呈現，保持條理分明，重點清晰。
+                """
+            
+            # 將基礎模板 + 風格指令 組合起來
+            st.session_state.custom_prompt = base_prompt + style_instruction
+            st.session_state.step = 2 
+            st.rerun() 
 
     # === 第二步：Prompt 編輯器與最終確認 ===
     if st.session_state.get("step") == 2:
@@ -178,13 +220,16 @@ if target_patient_id:
         col_edit, col_preview = st.columns([1, 1])
         
         with col_edit:
-            st.info("您可以在下方編輯框中，修改給 AI 的指令。")
+            st.info(f"💡 目前模式：{template_option} + {style_option}")
+            st.caption("您可以直接編輯下方的指令，進一步微調 AI 行為。")
             # 讓使用者編輯 System Prompt
             user_edited_prompt = st.text_area(
-                "System Prompt (AI 角色與規則設定):", 
+                "System Prompt (AI 角色與規則):", 
                 value=st.session_state.custom_prompt, 
                 height=400
             )
+            # 更新 session state 中的 prompt
+            st.session_state.custom_prompt = user_edited_prompt
             
         with col_preview:
             # 顯示撈到的資料統計
@@ -193,26 +238,23 @@ if target_patient_id:
             v_c = len(p_data['vitals'])
             l_c = len(p_data['labs'])
             
-            st.success(f"✅ 資料準備就緒")
-            st.write(f"- 護理紀錄: {n_c} 筆")
-            st.write(f"- 生理監測: {v_c} 筆")
-            st.write(f"- 檢驗報告: {l_c} 筆")
-            st.warning("⚠️ 注意：若修改左側 Prompt，將會改變 AI 的生成行為。")
+            st.success(f"✅ 資料已準備就緒")
+            st.markdown(f"""
+            - **護理紀錄**: {n_c} 筆
+            - **生理監測**: {v_c} 筆
+            - **檢驗報告**: {l_c} 筆
+            """)
+            st.warning("⚠️ 修改左側指令後，請點擊下方按鈕生成摘要。")
             
             # 按鈕 2: 真正呼叫 AI
-            if st.button("✨ 確認並生成摘要", type="primary", use_container_width=True):
-                # 我們需要稍微修改 ai_summarizer.py 的呼叫方式，
-                # 但為了不改後端，我們這裡用一個小技巧：
-                # 雖然 generate_nursing_summary 會自己去拿 SYSTEM_PROMPTS，
-                # 但我們可以暫時修改 SYSTEM_PROMPTS 字典！
-                
-                SYSTEM_PROMPTS[selected_template] = user_edited_prompt
+            if st.button("✨ 確認修改並生成摘要", type="primary", use_container_width=True):
                 
                 with st.spinner("🤖 AI 正在撰寫摘要..."):
                     summary = generate_nursing_summary(
                         target_patient_id, 
                         st.session_state.patient_data, 
-                        template_type=selected_template
+                        template_type=selected_template,
+                        custom_system_prompt=st.session_state.custom_prompt # 傳入使用者修改過的 Prompt
                     )
                     
                 st.session_state.final_summary = summary
@@ -229,12 +271,12 @@ if target_patient_id:
         tab1, tab2, tab3 = st.tabs(["📝 AI 生成摘要", "📂 原始數據預覽", "📈 生命徵象趨勢"])
 
         with tab1:
-            st.markdown(f"### 📋 {template_option} (最終結果)")
+            st.markdown(f"### 📋 {template_option} ({style_option})")
             st.markdown("---")
             st.markdown(summary)
             st.download_button("📥 下載摘要", summary, f"summary_{target_patient_id}.txt")
             
-            if st.button("🔄 重新開始"):
+            if st.button("🔄 重新開始 / 修改設定"):
                 st.session_state.step = 1
                 st.rerun()
 
