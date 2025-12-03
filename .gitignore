@@ -32,3 +32,8 @@ __pycache__/
 # 其他常見的日誌和暫存檔案
 *.log
 tmp/
+
+node_modules/
+dist/
+.env
+.DS_Store
