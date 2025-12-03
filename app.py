@@ -4,7 +4,7 @@ import streamlit as st
 import os
 import pandas as pd
 from dotenv import load_dotenv
-from datetime import datetime
+from datetime import datetime, time
 
 # 引入後端模組
 from db.patient_service import get_patient_full_history, get_all_patients_overview
@@ -14,211 +14,217 @@ from ai.ai_summarizer import generate_nursing_summary
 st.set_page_config(page_title="AI 急診護理摘要系統", layout="wide", page_icon="🚑")
 
 # ==========================================
-# 輔助函數：時間格式美化
+# 輔助函數
 # ==========================================
 def format_time_str(raw_time):
-    """
-    將資料庫原始時間字串 (YYYYMMDDHHMMSS) 轉為易讀格式 (YYYY-MM-DD HH:MM)
-    """
+    """將資料庫原始時間字串轉為易讀格式"""
     if not raw_time or len(str(raw_time)) < 12:
-        return raw_time # 如果格式不對，就回傳原值
-    
+        return raw_time
     s = str(raw_time)
     # 格式化為: 2025-11-15 15:30
     return f"{s[:4]}-{s[4:6]}-{s[6:8]} {s[8:10]}:{s[10:12]}"
 
 # ==========================================
-# 1. 載入資料庫現有病患
+# 1. 載入資料庫現有病患 (快取)
 # ==========================================
 @st.cache_data(ttl=60)
 def load_patient_list():
     raw_list = get_all_patients_overview()
-    # 在這裡先幫資料做「美顏」，把時間格式化
     for p in raw_list:
-        p['原始最早'] = p['最早紀錄'] # 保留原始格式用於排序或邏輯
+        p['原始最早'] = p['最早紀錄'] 
         p['原始最晚'] = p['最晚紀錄']
         p['最早紀錄_顯示'] = format_time_str(p['最早紀錄'])
         p['最晚紀錄_顯示'] = format_time_str(p['最晚紀錄'])
+        p['label'] = f"{p['病歷號']} (共 {p['資料筆數']} 筆資料)"
     return raw_list
 
 patients_list = load_patient_list()
 
-# 製作下拉選單選項
-patient_options = [f"{p['病歷號']} (共{p['資料筆數']}筆)" for p in patients_list]
-id_map = {f"{p['病歷號']} (共{p['資料筆數']}筆)": p['病歷號'] for p in patients_list}
+# ==========================================
+# 2. 介面佈局
+# ==========================================
+st.title("🏥 AI 急診病程摘要生成系統")
+
+# --- 頂部：選擇區塊 ---
+st.markdown("### 1️⃣ 選擇病患")
+
+options = ["請選擇..."] + [p['label'] for p in patients_list]
+selected_label = st.selectbox("請從清單中選擇一位病患：", options, index=0)
+
+target_patient_id = None
+selected_info = None
+
+if selected_label != "請選擇...":
+    selected_info = next((p for p in patients_list if p['label'] == selected_label), None)
+    if selected_info:
+        target_patient_id = selected_info['病歷號']
+
+# --- 中間：顯示完整清單 ---
+with st.expander("📊 查看資料庫完整病患清單 (點擊展開/收合)", expanded=(target_patient_id is None)):
+    if patients_list:
+        df_display = pd.DataFrame(patients_list)[['病歷號', '最早紀錄_顯示', '最晚紀錄_顯示', '資料筆數']]
+        df_display.columns = ['病歷號', '最早就診時間', '最後紀錄時間', '資料筆數']
+        st.dataframe(
+            df_display,
+            use_container_width=True,
+            column_config={
+                "資料筆數": st.column_config.ProgressColumn(
+                    "資料量", format="%d", min_value=0, max_value=max(p['資料筆數'] for p in patients_list)
+                ),
+            },
+            hide_index=True
+        )
+    else:
+        st.warning("資料庫中目前沒有資料。")
 
 # ==========================================
-# 2. 側邊欄設計
+# 3. 側邊欄：時間與進階設定
 # ==========================================
 with st.sidebar:
-    st.title("🚑 控制面板")
+    st.header("⚙️ 進階設定")
     
-    st.subheader("1. 選擇病患")
-    input_mode = st.radio("輸入方式", ["從清單選擇", "手動輸入 ID"], horizontal=True)
+    # === 修改重點開始：增強顯示資訊 ===
+    if selected_info:
+        # 使用 Markdown 語法換行 (\n\n) 來排版
+        info_text = (
+            f"**已選擇：{target_patient_id}**\n\n"
+            f"📅 **最早紀錄：** {selected_info['最早紀錄_顯示']}\n\n"
+            f"🕒 **最晚紀錄：** {selected_info['最晚紀錄_顯示']}"
+        )
+        st.success(info_text)
+    # === 修改重點結束 ===
     
-    target_patient_id = ""
+    st.divider()
     
-    if input_mode == "從清單選擇":
-        if patient_options:
-            selected_option = st.selectbox("請選擇病患", patient_options)
-            target_patient_id = id_map[selected_option]
-            
-            # 顯示該病患的時間資訊 (使用美化後的時間)
-            selected_info = next((p for p in patients_list if p['病歷號'] == target_patient_id), None)
-            if selected_info:
-                st.info(
-                    f"📅 資料區間：\n\n"
-                    f"**{selected_info['最早紀錄_顯示']}**\n⬇\n"
-                    f"**{selected_info['最晚紀錄_顯示']}**"
-                )
-        else:
-            st.warning("資料庫中無資料。")
-            target_patient_id = st.text_input("請手動輸入病歷號")
-    else:
-        target_patient_id = st.text_input("請手動輸入病歷號", value="0002452972")
-
-    st.subheader("2. 時間篩選 (選用)")
+    st.subheader("時間篩選")
     use_time_filter = st.checkbox("啟用時間篩選", value=False)
     start_dt_str = None
     end_dt_str = None
     
     if use_time_filter:
-        col1, col2 = st.columns(2)
-        with col1:
-            d1 = st.date_input("開始日期", datetime(2025, 11, 15))
-            t1 = st.time_input("開始時間", datetime.strptime("15:00", "%H:%M").time())
-        with col2:
-            d2 = st.date_input("結束日期", datetime(2025, 11, 15))
-            t2 = st.time_input("結束時間", datetime.strptime("17:00", "%H:%M").time())
-            
-        start_dt_str = f"{d1.year}{d1.month:02d}{d1.day:02d}{t1.hour:02d}{t1.minute:02d}00"
-        end_dt_str = f"{d2.year}{d2.month:02d}{d2.day:02d}{t2.hour:02d}{t2.minute:02d}00"
+        default_d1 = datetime.now().date()
+        default_t1 = time(0, 0)
+        default_d2 = datetime.now().date()
+        default_t2 = time(23, 59)
 
-    st.divider()
-    run_btn = st.button("🚀 開始生成摘要", type="primary", use_container_width=True)
+        if selected_info:
+            try:
+                if selected_info['原始最早']:
+                    raw_start = str(selected_info['原始最早'])
+                    dt_start = datetime.strptime(raw_start, "%Y%m%d%H%M%S")
+                    default_d1 = dt_start.date()
+                    default_t1 = dt_start.time().replace(minute=0, second=0)
+                
+                if selected_info['原始最晚']:
+                    raw_end = str(selected_info['原始最晚'])
+                    dt_end = datetime.strptime(raw_end, "%Y%m%d%H%M%S")
+                    default_d2 = dt_end.date()
+                    default_t2 = dt_end.time() 
+            except: pass
 
-# ==========================================
-# 3. 主畫面邏輯
-# ==========================================
-st.title("🏥 AI 急診病程摘要生成系統")
-
-# --- 首頁儀表板 (還沒按生成按鈕時顯示) ---
-if not run_btn:
-    st.markdown("### 📊 資料庫病患總覽")
-    st.info("請從左側選擇一位病患並點擊「開始生成摘要」。")
-    
-    if patients_list:
-        # 整理要在表格顯示的欄位 (只顯示美化後的時間)
-        display_data = []
-        for p in patients_list:
-            display_data.append({
-                "病歷號": p['病歷號'],
-                "最早就診時間": p['最早紀錄_顯示'], # 使用美化版
-                "最後紀錄時間": p['最晚紀錄_顯示'], # 使用美化版
-                "資料筆數": p['資料筆數']
-            })
-            
-        df_overview = pd.DataFrame(display_data)
+        st.markdown("**起始時間**")
+        c1, c2 = st.columns(2)
+        with c1: d1 = st.date_input("開始日期", default_d1)
+        with c2: t1 = st.time_input("開始時間", default_t1)
         
-        st.dataframe(
-            df_overview, 
-            use_container_width=True,
-            column_config={
-                "病歷號": st.column_config.TextColumn("病歷號", help="Patient ID"),
-                "資料筆數": st.column_config.ProgressColumn(
-                    "資料量", 
-                    format="%d 筆", 
-                    min_value=0, 
-                    max_value=max(p['資料筆數'] for p in patients_list)
-                ),
-            }
+        st.markdown("**結束時間**")
+        c3, c4 = st.columns(2)
+        with c3: d2 = st.date_input("結束日期", default_d2)
+        with c4: t2 = st.time_input("結束時間", default_t2)
+        
+        start_dt_str = f"{d1.year}{d1.month:02d}{d1.day:02d}{t1.hour:02d}{t1.minute:02d}00"
+        end_dt_str = f"{d2.year}{d2.month:02d}{d2.day:02d}{t2.hour:02d}{t2.minute:02d}59"
+
+# ==========================================
+# 4. 底部：執行與結果顯示
+# ==========================================
+
+if target_patient_id:
+    st.markdown("### 2️⃣ 生成摘要")
+    
+    btn_label = f"🚀 開始分析：{target_patient_id}"
+    if use_time_filter:
+        btn_label += f" (篩選: {d1} {t1.strftime('%H:%M')} ~ {d2} {t2.strftime('%H:%M')})"
+        
+    run_btn = st.button(btn_label, type="primary", use_container_width=True)
+
+    if run_btn:
+        load_dotenv()
+        api_ready = os.getenv("GROQ_API_KEY") or os.getenv("OPENAI_API_KEY")
+        if not api_ready:
+            st.error("❌ 未偵測到 API Key (Groq/OpenAI)，請檢查 .env 檔案！")
+            st.stop()
+
+        status_box = st.status(f"🔍 正在撈取病患資料...", expanded=True)
+        
+        # 1. 撈取資料
+        patient_data = get_patient_full_history(
+            target_patient_id, 
+            start_time=start_dt_str, 
+            end_time=end_dt_str
         )
-    else:
-        st.warning("目前資料庫中沒有任何護理紀錄資料。")
 
-# --- 執行摘要生成 ---
-else:
-    if not target_patient_id:
-        st.error("請先輸入或選擇一個病歷號！")
-        st.stop()
-
-    load_dotenv()
-    # 檢查 API Key
-    api_ready = os.getenv("GROQ_API_KEY") or os.getenv("OPENAI_API_KEY")
-    if not api_ready:
-        st.error("❌ 未偵測到 API Key (Groq/OpenAI)，請檢查 .env 檔案！")
-        st.stop()
-
-    status_box = st.status(f"🔍 正在搜尋病患 ID: **{target_patient_id}** ...", expanded=True)
-
-    # 1. 撈取資料
-    patient_data = get_patient_full_history(
-        target_patient_id, 
-        start_time=start_dt_str, 
-        end_time=end_dt_str
-    )
-
-    if not patient_data or (len(patient_data['nursing']) + len(patient_data['vitals']) + len(patient_data['labs']) == 0):
-        status_box.update(label="❌ 找不到資料", state="error")
-        st.error(f"找不到病患 {target_patient_id} 的資料，或該時段無資料。")
-    else:
-        # 統計
-        n_count = len(patient_data['nursing'])
-        v_count = len(patient_data['vitals'])
-        l_count = len(patient_data['labs'])
-        status_box.write(f"✅ 資料撈取成功！(護理: {n_count} | 生理: {v_count} | 檢驗: {l_count})")
-
-        # 2. 顯示分頁
-        tab1, tab2, tab3 = st.tabs(["📝 AI 生成摘要", "📊 原始資料預覽", "📈 生命徵象趨勢"])
-
-        with tab1:
-            status_box.write("🤖 正在呼叫 AI 模型進行分析...")
+        if not patient_data or (len(patient_data['nursing']) + len(patient_data['vitals']) + len(patient_data['labs']) == 0):
+            status_box.update(label="❌ 查無資料", state="error")
+            st.error("該時段無資料，請調整篩選條件。")
+        else:
+            n_c = len(patient_data['nursing'])
+            v_c = len(patient_data['vitals'])
+            l_c = len(patient_data['labs'])
+            status_box.write(f"✅ 資料撈取成功 (護理:{n_c}, 生理:{v_c}, 檢驗:{l_c})")
+            status_box.write("🤖 正在呼叫 AI 模型撰寫摘要...")
+            
+            # 2. 生成摘要
             summary = generate_nursing_summary(target_patient_id, patient_data)
-            status_box.update(label="✅ 摘要生成完成！", state="complete", expanded=False)
-            
-            st.markdown("### 📋 急診病程摘要")
-            st.markdown("---")
-            st.markdown(summary)
-            
-            st.download_button(
-                label="📥 下載摘要文字檔",
-                data=summary,
-                file_name=f"summary_{target_patient_id}.txt",
-                mime="text/plain"
-            )
+            status_box.update(label="✅ 分析完成！", state="complete", expanded=False)
 
-        with tab2:
-            c1, c2 = st.columns(2)
-            with c1:
-                st.write(f"**🩺 護理紀錄 ({n_count})**")
+            # 3. 顯示分頁 (Tabs)
+            tab1, tab2, tab3 = st.tabs(["📝 AI 生成摘要", "📂 原始數據預覽", "📈 生命徵象趨勢"])
+
+            with tab1:
+                st.markdown("### 📋 急診病程摘要")
+                st.markdown("---")
+                st.markdown(summary)
+                st.download_button("📥 下載摘要", summary, f"summary_{target_patient_id}.txt")
+
+            with tab2:
+                st.info("以下顯示本次分析所使用的原始資料，您可以點擊表頭進行排序或搜尋。")
+                
+                st.subheader(f"🩺 護理紀錄 ({n_c} 筆)")
                 st.dataframe(patient_data['nursing'], use_container_width=True)
-                st.write(f"**💓 生理監測 ({v_count})**")
-                st.dataframe(patient_data['vitals'], use_container_width=True)
-            with c2:
-                st.write(f"**🧪 檢驗報告 ({l_count})**")
-                st.dataframe(patient_data['labs'], use_container_width=True)
+                
+                st.divider()
+                
+                c_a, c_b = st.columns(2)
+                with c_a:
+                    st.subheader(f"💓 生理監測 ({v_c} 筆)")
+                    st.dataframe(patient_data['vitals'], use_container_width=True)
+                with c_b:
+                    st.subheader(f"🧪 檢驗報告 ({l_c} 筆)")
+                    st.dataframe(patient_data['labs'], use_container_width=True)
 
-        with tab3:
-            if v_count > 0:
-                df_vitals = pd.DataFrame(patient_data['vitals'])
-                if 'PROCDTTM' in df_vitals.columns:
+            with tab3:
+                if v_c > 0:
                     try:
-                        df_vitals['Time'] = pd.to_datetime(df_vitals['PROCDTTM'], format='%Y%m%d%H%M%S', errors='coerce')
-                        df_vitals = df_vitals.dropna(subset=['Time']).set_index('Time')
-                        
-                        st.write("**生命徵象趨勢圖**")
-                        cols_to_plot = []
-                        # 嘗試轉數值並繪圖
-                        for col in ['EPLUSE', 'ESAO2', 'ETEMPUTER']:
-                            if col in df_vitals.columns:
-                                df_vitals[col] = pd.to_numeric(df_vitals[col], errors='coerce')
-                                cols_to_plot.append(col)
+                        df_vitals = pd.DataFrame(patient_data['vitals'])
+                        if 'PROCDTTM' in df_vitals.columns:
+                            df_vitals['Time'] = pd.to_datetime(df_vitals['PROCDTTM'], format='%Y%m%d%H%M%S', errors='coerce')
+                            df_vitals = df_vitals.dropna(subset=['Time']).set_index('Time')
                             
-                        if cols_to_plot:
-                            st.line_chart(df_vitals[cols_to_plot])
-                        else:
-                            st.info("數值格式無法解析，無法繪圖。")
+                            cols_to_plot = []
+                            for col in ['EPLUSE', 'ESAO2', 'ETEMPUTER']:
+                                if col in df_vitals.columns:
+                                    df_vitals[col] = pd.to_numeric(df_vitals[col], errors='coerce')
+                                    cols_to_plot.append(col)
+                            
+                            if cols_to_plot:
+                                st.line_chart(df_vitals[cols_to_plot])
+                            else:
+                                st.info("無可繪製的數值資料。")
                     except:
-                        st.warning("時間格式解析失敗。")
-            else:
-                st.info("無生理監測資料。")
+                        st.warning("繪圖時發生資料解析錯誤。")
+                else:
+                    st.info("此病患無生理監測資料，無法繪圖。")
+
+else:
+    st.info("👆 請先在上方選單選擇一位病患。")
