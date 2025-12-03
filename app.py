@@ -8,7 +8,7 @@ from datetime import datetime, time
 
 # 引入後端模組
 from db.patient_service import get_patient_full_history, get_all_patients_overview
-from ai.ai_summarizer import generate_nursing_summary
+from ai.ai_summarizer import generate_nursing_summary, SYSTEM_PROMPTS # 引入 SYSTEM_PROMPTS 方便預覽
 
 # --- 設定網頁 ---
 st.set_page_config(page_title="AI 急診護理摘要系統", layout="wide", page_icon="🚑")
@@ -22,7 +22,7 @@ def format_time_str(raw_time):
     return f"{s[:4]}-{s[4:6]}-{s[6:8]} {s[8:10]}:{s[10:12]}"
 
 # ==========================================
-# 1. 載入資料庫現有病患 (快取)
+# 1. 載入資料庫現有病患
 # ==========================================
 @st.cache_data(ttl=60)
 def load_patient_list():
@@ -82,23 +82,19 @@ with st.sidebar:
     
     st.divider()
 
-    # === 新增功能：選擇摘要格式 ===
+    # === 摘要格式 ===
     st.subheader("📝 摘要格式")
     template_option = st.radio(
         "請選擇生成模板：",
         ["一般摘要 (General)", "SOAP 護理記錄"],
         index=0
     )
-    # 將選項轉換為後端代碼
-    template_map = {
-        "一般摘要 (General)": "general",
-        "SOAP 護理記錄": "soap"
-    }
+    template_map = {"一般摘要 (General)": "general", "SOAP 護理記錄": "soap"}
     selected_template = template_map[template_option]
-    # ==========================
     
     st.divider()
     
+    # === 時間篩選 ===
     st.subheader("⏳ 時間篩選")
     use_time_filter = st.checkbox("啟用時間篩選", value=False)
     start_dt_str = None
@@ -142,92 +138,135 @@ with st.sidebar:
 if target_patient_id:
     st.markdown("### 2️⃣ 生成摘要")
     
-    btn_label = f"🚀 開始分析：{target_patient_id}"
-    if use_time_filter:
-        btn_label += f" (篩選時間)"
+    # === 修改重點：使用 Session State 管理步驟 ===
+    # 我們不直接生成摘要，而是先進入「預覽模式」
+    
+    # 初始化 session state
+    if "step" not in st.session_state: st.session_state.step = 1
+    if "custom_prompt" not in st.session_state: st.session_state.custom_prompt = ""
+    
+    # 按鈕 1: 撈取資料並準備 Prompt
+    btn_label = f"🔍 撈取資料並預覽 Prompt"
+    if use_time_filter: btn_label += " (已篩選時間)"
         
-    run_btn = st.button(btn_label, type="primary", use_container_width=True)
-
-    if run_btn:
+    if st.button(btn_label, type="primary", use_container_width=True):
         load_dotenv()
         api_ready = os.getenv("GROQ_API_KEY") or os.getenv("OPENAI_API_KEY")
         if not api_ready:
-            st.error("❌ 未偵測到 API Key (Groq/OpenAI)，請檢查 .env 檔案！")
+            st.error("❌ 未偵測到 API Key！")
             st.stop()
 
-        status_box = st.status(f"🔍 正在撈取病患資料...", expanded=True)
-        
-        # 1. 撈取資料
-        patient_data = get_patient_full_history(
-            target_patient_id, 
-            start_time=start_dt_str, 
-            end_time=end_dt_str
-        )
-
+        # 撈取資料
+        with st.spinner("正在撈取資料..."):
+            patient_data = get_patient_full_history(target_patient_id, start_dt_str, end_dt_str)
+            
         if not patient_data or (len(patient_data['nursing']) + len(patient_data['vitals']) + len(patient_data['labs']) == 0):
-            status_box.update(label="❌ 查無資料", state="error")
-            st.error("該時段無資料，請調整篩選條件。")
+            st.error("查無資料，請調整篩選條件。")
         else:
-            n_c = len(patient_data['nursing'])
-            v_c = len(patient_data['vitals'])
-            l_c = len(patient_data['labs'])
-            status_box.write(f"✅ 資料撈取成功 (護理:{n_c}, 生理:{v_c}, 檢驗:{l_c})")
-            
-            # 顯示正在使用的模板
-            status_box.write(f"🤖 正在使用 **{template_option}** 模板撰寫摘要...")
-            
-            # 2. 生成摘要 (傳入 template_type)
-            summary = generate_nursing_summary(
-                target_patient_id, 
-                patient_data, 
-                template_type=selected_template # <--- 關鍵參數
+            # 儲存資料到 session state
+            st.session_state.patient_data = patient_data
+            # 預載入 System Prompt 到編輯區
+            st.session_state.custom_prompt = SYSTEM_PROMPTS[selected_template]
+            st.session_state.step = 2 # 進入第二步
+            st.rerun() # 重新整理頁面以顯示新內容
+
+    # === 第二步：Prompt 編輯器與最終確認 ===
+    if st.session_state.get("step") == 2:
+        st.divider()
+        st.markdown("### 🛠️ 調整 Prompt (指令)")
+        
+        col_edit, col_preview = st.columns([1, 1])
+        
+        with col_edit:
+            st.info("您可以在下方編輯框中，修改給 AI 的指令。")
+            # 讓使用者編輯 System Prompt
+            user_edited_prompt = st.text_area(
+                "System Prompt (AI 角色與規則設定):", 
+                value=st.session_state.custom_prompt, 
+                height=400
             )
-            status_box.update(label="✅ 分析完成！", state="complete", expanded=False)
+            
+        with col_preview:
+            # 顯示撈到的資料統計
+            p_data = st.session_state.patient_data
+            n_c = len(p_data['nursing'])
+            v_c = len(p_data['vitals'])
+            l_c = len(p_data['labs'])
+            
+            st.success(f"✅ 資料準備就緒")
+            st.write(f"- 護理紀錄: {n_c} 筆")
+            st.write(f"- 生理監測: {v_c} 筆")
+            st.write(f"- 檢驗報告: {l_c} 筆")
+            st.warning("⚠️ 注意：若修改左側 Prompt，將會改變 AI 的生成行為。")
+            
+            # 按鈕 2: 真正呼叫 AI
+            if st.button("✨ 確認並生成摘要", type="primary", use_container_width=True):
+                # 我們需要稍微修改 ai_summarizer.py 的呼叫方式，
+                # 但為了不改後端，我們這裡用一個小技巧：
+                # 雖然 generate_nursing_summary 會自己去拿 SYSTEM_PROMPTS，
+                # 但我們可以暫時修改 SYSTEM_PROMPTS 字典！
+                
+                SYSTEM_PROMPTS[selected_template] = user_edited_prompt
+                
+                with st.spinner("🤖 AI 正在撰寫摘要..."):
+                    summary = generate_nursing_summary(
+                        target_patient_id, 
+                        st.session_state.patient_data, 
+                        template_type=selected_template
+                    )
+                    
+                st.session_state.final_summary = summary
+                st.session_state.step = 3 # 進入第三步
+                st.rerun()
 
-            # 3. 顯示結果
-            tab1, tab2, tab3 = st.tabs(["📝 AI 生成摘要", "📂 原始數據預覽", "📈 生命徵象趨勢"])
+    # === 第三步：顯示最終結果 ===
+    if st.session_state.get("step") == 3:
+        st.divider()
+        summary = st.session_state.final_summary
+        p_data = st.session_state.patient_data
+        
+        # 顯示結果 Tab
+        tab1, tab2, tab3 = st.tabs(["📝 AI 生成摘要", "📂 原始數據預覽", "📈 生命徵象趨勢"])
 
-            with tab1:
-                st.markdown(f"### 📋 {template_option}")
-                st.markdown("---")
-                st.markdown(summary)
-                st.download_button("📥 下載摘要", summary, f"summary_{target_patient_id}.txt")
+        with tab1:
+            st.markdown(f"### 📋 {template_option} (最終結果)")
+            st.markdown("---")
+            st.markdown(summary)
+            st.download_button("📥 下載摘要", summary, f"summary_{target_patient_id}.txt")
+            
+            if st.button("🔄 重新開始"):
+                st.session_state.step = 1
+                st.rerun()
 
-            with tab2:
-                st.info("以下顯示本次分析所使用的原始資料。")
-                st.subheader(f"🩺 護理紀錄 ({n_c} 筆)")
-                st.dataframe(patient_data['nursing'], use_container_width=True)
-                st.divider()
-                c_a, c_b = st.columns(2)
-                with c_a:
-                    st.subheader(f"💓 生理監測 ({v_c} 筆)")
-                    st.dataframe(patient_data['vitals'], use_container_width=True)
-                with c_b:
-                    st.subheader(f"🧪 檢驗報告 ({l_c} 筆)")
-                    st.dataframe(patient_data['labs'], use_container_width=True)
+        with tab2:
+            st.info("以下顯示本次分析所使用的原始資料。")
+            st.subheader(f"🩺 護理紀錄 ({len(p_data['nursing'])} 筆)")
+            st.dataframe(p_data['nursing'], use_container_width=True)
+            st.divider()
+            c_a, c_b = st.columns(2)
+            with c_a:
+                st.subheader(f"💓 生理監測 ({len(p_data['vitals'])} 筆)")
+                st.dataframe(p_data['vitals'], use_container_width=True)
+            with c_b:
+                st.subheader(f"🧪 檢驗報告 ({len(p_data['labs'])} 筆)")
+                st.dataframe(p_data['labs'], use_container_width=True)
 
-            with tab3:
-                if v_c > 0:
-                    try:
-                        df_vitals = pd.DataFrame(patient_data['vitals'])
-                        if 'PROCDTTM' in df_vitals.columns:
-                            df_vitals['Time'] = pd.to_datetime(df_vitals['PROCDTTM'], format='%Y%m%d%H%M%S', errors='coerce')
-                            df_vitals = df_vitals.dropna(subset=['Time']).set_index('Time')
-                            
-                            cols_to_plot = []
-                            for col in ['EPLUSE', 'ESAO2', 'ETEMPUTER']:
-                                if col in df_vitals.columns:
-                                    df_vitals[col] = pd.to_numeric(df_vitals[col], errors='coerce')
-                                    cols_to_plot.append(col)
-                            
-                            if cols_to_plot:
-                                st.line_chart(df_vitals[cols_to_plot])
-                            else:
-                                st.info("無可繪製的數值資料。")
-                    except: st.warning("繪圖錯誤")
-                else:
-                    st.info("無生理監測資料。")
+        with tab3:
+            if len(p_data['vitals']) > 0:
+                try:
+                    df_vitals = pd.DataFrame(p_data['vitals'])
+                    if 'PROCDTTM' in df_vitals.columns:
+                        df_vitals['Time'] = pd.to_datetime(df_vitals['PROCDTTM'], format='%Y%m%d%H%M%S', errors='coerce')
+                        df_vitals = df_vitals.dropna(subset=['Time']).set_index('Time')
+                        cols = []
+                        for col in ['EPLUSE', 'ESAO2', 'ETEMPUTER']:
+                            if col in df_vitals.columns:
+                                df_vitals[col] = pd.to_numeric(df_vitals[col], errors='coerce')
+                                cols.append(col)
+                        if cols: st.line_chart(df_vitals[cols])
+                except: pass
+            else:
+                st.info("無生理監測資料。")
 
 else:
     st.info("👆 請先在上方選單選擇一位病患。")
-    
