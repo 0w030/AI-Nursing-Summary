@@ -40,7 +40,7 @@ def scan_patients():
         filepath = find_file_path(filename)
         
         if not filepath:
-            print(f"⚠️  找不到檔案: {filename}")
+            print(f"找不到檔案: {filename}")
             continue
             
         files_found_count += 1
@@ -78,7 +78,7 @@ def scan_patients():
              except: pass
 
     if files_found_count == 0:
-        print("\n❌ 錯誤：完全找不到任何 CSV 檔案！")
+        print("\n錯誤：完全找不到任何 CSV 檔案！")
         print("請確認您是否已經將 CSV 檔案拖入 VS Code 的專案資料夾中。")
         return
 
