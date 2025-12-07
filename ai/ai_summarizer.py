@@ -164,7 +164,7 @@ def generate_nursing_summary(patient_id, patient_data, template_type="general", 
 
     # === Debug 輸出 (讓您在終端機看到傳了什麼) ===
     print("\n" + "="*50)
-    print(f"🚀 [DEBUG] 發送 Prompt (Template: {template_type} | Custom: {bool(custom_system_prompt)})")
+    print(f"[DEBUG] 發送 Prompt (Template: {template_type} | Custom: {bool(custom_system_prompt)})")
     print("-" * 50)
     print("【System Prompt】(前 200 字預覽):")
     print(selected_system_prompt[:200] + "...")
@@ -187,5 +187,5 @@ def generate_nursing_summary(patient_id, patient_data, template_type="general", 
         )
         return response.choices[0].message.content
     except Exception as e:
-        print(f"❌ API Error: {e}")
+        print(f"API Error: {e}")
         return f"AI 生成失敗: {e}"

@@ -24,7 +24,7 @@ def get_patient_full_history(patient_id, start_time=None, end_time=None):
     """
     conn = get_db_connection()
     if not conn:
-        print("❌ 無法建立連線，無法查詢病患資料。")
+        print("無法建立連線，無法查詢病患資料。")
         return None
 
     patient_data = {
@@ -38,7 +38,7 @@ def get_patient_full_history(patient_id, start_time=None, end_time=None):
             # ==========================================
             # 1. 護理紀錄 (時間欄位: PROCDTTM)
             # ==========================================
-            print(f"🔍 正在查詢病患 {patient_id} 的護理紀錄...")
+            print(f"正在查詢病患 {patient_id} 的護理紀錄...")
             
             # 基礎 SQL
             sql_nursing = "SELECT PROCDTTM, SUBJECT, DIAGNOSIS FROM ENSDATA WHERE PATID = %s"
@@ -66,7 +66,7 @@ def get_patient_full_history(patient_id, start_time=None, end_time=None):
             # ==========================================
             # 2. 生理監測 (時間欄位: PROCDTTM)
             # ==========================================
-            print(f"🔍 正在查詢病患 {patient_id} 的生理監測數據...")
+            print(f"正在查詢病患 {patient_id} 的生理監測數據...")
             
             sql_vitals = """
                 SELECT PROCDTTM, ETEMPUTER, EPLUSE, EBREATHE, EPRESSURE, EDIASTOLIC, ESAO2, 
@@ -101,7 +101,7 @@ def get_patient_full_history(patient_id, start_time=None, end_time=None):
             # ==========================================
             # 3. 檢驗結果 (時間欄位: CHRCPDTM)
             # ==========================================
-            print(f"🔍 正在查詢病患 {patient_id} 的檢驗報告...")
+            print(f"正在查詢病患 {patient_id} 的檢驗報告...")
             
             sql_labs = """
                 SELECT CHRCPDTM, CHHEAD, CHVAL, CHUNIT, CHNL, CHNH
@@ -129,11 +129,11 @@ def get_patient_full_history(patient_id, start_time=None, end_time=None):
                     "REF_RANGE": f"{row[4]}~{row[5]}"
                 })
 
-        print(f"✅ 查詢完成 (時間範圍: {start_time if start_time else '不限'} ~ {end_time if end_time else '不限'})")
+        print(f"查詢完成 (時間範圍: {start_time if start_time else '不限'} ~ {end_time if end_time else '不限'})")
         return patient_data
 
     except psycopg2.Error as e:
-        print(f"❌ 資料庫查詢失敗: {e}")
+        print(f"資料庫查詢失敗: {e}")
         return None
     finally:
         conn.close()
@@ -193,7 +193,7 @@ def get_all_patients_overview():
         return overview_list
 
     except psycopg2.Error as e:
-        print(f"❌ 查詢病患清單失敗: {e}")
+        print(f"查詢病患清單失敗: {e}")
         return []
     finally:
         conn.close()
@@ -229,4 +229,4 @@ if __name__ == "__main__":
         chinese_view = translate_to_chinese_view(data['labs'][:1])
         print(json.dumps(chinese_view, indent=2, ensure_ascii=False))
         
-        print(f"\n✅ 統計: 護理 {len(data['nursing'])} 筆, 生理 {len(data['vitals'])} 筆, 檢驗 {len(data['labs'])} 筆")
+        print(f"\n統計: 護理 {len(data['nursing'])} 筆, 生理 {len(data['vitals'])} 筆, 檢驗 {len(data['labs'])} 筆")

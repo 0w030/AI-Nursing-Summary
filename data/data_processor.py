@@ -40,12 +40,12 @@ def import_lab_data_er():
                 """
                 cur.executemany(query, data)
             conn.commit()
-            print(f"✅ 成功匯入 {len(data)} 筆資料到 DB_ADM_LABDATA_ER")
+            print(f"成功匯入 {len(data)} 筆資料到 DB_ADM_LABDATA_ER")
         else:
-            print("⚠️ 檔案為空")
+            print("檔案為空")
 
     except Exception as e:
-        print(f"❌ 匯入失敗: {e}")
+        print(f"匯入失敗: {e}")
     finally:
         conn.close()
 
@@ -81,12 +81,12 @@ def import_lab_order_er():
                 """
                 cur.executemany(query, data)
             conn.commit()
-            print(f"✅ 成功匯入 {len(data)} 筆資料到 DB_ADM_LABORDER_ER")
+            print(f"成功匯入 {len(data)} 筆資料到 DB_ADM_LABORDER_ER")
         else:
-            print("⚠️ 檔案為空")
+            print("檔案為空")
 
     except Exception as e:
-        print(f"❌ 匯入失敗: {e}")
+        print(f"匯入失敗: {e}")
     finally:
         conn.close()
 
@@ -152,12 +152,12 @@ def import_vital_signs():
                 """
                 cur.executemany(query, data)
             conn.commit()
-            print(f"✅ 成功匯入 {len(data)} 筆資料到 v_ai_hisensnes")
+            print(f"成功匯入 {len(data)} 筆資料到 v_ai_hisensnes")
         else:
-            print("⚠️ 檔案為空")
+            print("檔案為空")
 
     except Exception as e:
-        print(f"❌ 匯入失敗: {e}")
+        print(f"匯入失敗: {e}")
     finally:
         conn.close()
 
@@ -192,12 +192,12 @@ def import_nursing_records():
                 """
                 cur.executemany(query, data)
             conn.commit()
-            print(f"✅ 成功匯入 {len(data)} 筆資料到 ENSDATA")
+            print(f"成功匯入 {len(data)} 筆資料到 ENSDATA")
         else:
-            print("⚠️ 檔案為空")
+            print("檔案為空")
 
     except Exception as e:
-        print(f"❌ 匯入失敗: {e}")
+        print(f"匯入失敗: {e}")
     finally:
         conn.close()
 
@@ -233,12 +233,12 @@ def import_adm_order_er():
                 """
                 cur.executemany(query, data)
             conn.commit()
-            print(f"✅ 成功匯入 {len(data)} 筆資料到 DB_ADM_ORDER_ER")
+            print(f"成功匯入 {len(data)} 筆資料到 DB_ADM_ORDER_ER")
         else:
-            print("⚠️ 檔案為空")
+            print("檔案為空")
 
     except Exception as e:
-        print(f"❌ 匯入失敗: {e}")
+        print(f"匯入失敗: {e}")
     finally:
         conn.close()
 
