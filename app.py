@@ -186,7 +186,7 @@ elif app_mode == " 模板設計師":
 
         # 初始化 session_state
         if "role_type" not in st.session_state:
-            st.session_state.role_type = "急診主治醫師 (VS)"
+            st.session_state.role_type = "一般病房護理師 (Ward Nurse)"
         if "scenario_type" not in st.session_state:
             st.session_state.scenario_type = "急診轉住院 (Admission Note)"
         if "format_type" not in st.session_state:
@@ -200,13 +200,17 @@ elif app_mode == " 模板設計師":
             format_type = st.session_state.format_type
 
             role_definitions = {
-                "急診主治醫師 (VS)": {
-                    "focus": "決策導向。關注關鍵異常數據、鑑別診斷、處置後的反應、最終動向（住院/出院/轉院）的判斷依據。",
-                    "tone": "權威、果斷、總結性強。"
+                "加護病房護理師 (ICU Nurse)": {
+                    "focus": "重症照護導向。持續性生命徵象監測、器官系統功能評估、維生管路 (CVC, A-line) 與呼吸器設定、精密液體平衡 (I/O)、鎮靜與疼痛評估。",
+                    "tone": "嚴謹、數據導向、強調細節與趨勢分析。"
                 },
-                "住院醫師 (R)": {
-                    "focus": "過程導向。詳細的病史詢問 (History Taking)、完整的理學檢查結果、處置過程的詳細記錄、鑑別診斷的思路。",
-                    "tone": "詳盡、條理分明、包含鑑別診斷邏輯。"
+                "一般病房護理師 (Ward Nurse)": {
+                    "focus": "住院照護導向。入院護理評估、病人安全 (跌倒/壓傷風險)、給藥治療、主要照顧者與家庭支持系統、住院期間的護理計畫與衛教。",
+                    "tone": "溫暖、完整、強調個別化照護與持續性。"
+                },
+                "傷口護理師 (Wound Care Nurse)": {
+                    "focus": "傷口評估導向。傷口部位、大小、深度 (T.I.M.E. 原則)、滲出液性質、周圍皮膚狀況、敷料選擇與換藥頻率建議。",
+                    "tone": "描述性強、精確、強調組織癒合進程。"
                 },
                 "專科護理師 (NP)": {
                     "focus": "協作導向。協助醫師撰寫病程紀錄、開立醫囑後的執行狀況、各項檢查報告的追蹤整理、出院衛教。",
@@ -216,13 +220,9 @@ elif app_mode == " 模板設計師":
                     "focus": "照護導向。生命徵象的動態變化、給藥後的立即反應、管路照護（點滴、尿管）、病患的主觀不適與情緒反應。",
                     "tone": "觀察入微、強調病患當下狀態與執行面。"
                 },
-                "檢傷護理師 (Triage)": {
+                "檢傷護理師 (Triage Nurse)": {
                     "focus": "風險導向。剛到院時的主訴、生命徵象是否穩定、檢傷級數判定、傳染病接觸史 (TOCC)。",
                     "tone": "簡潔、快速、強調危急程度。"
-                },
-                "個案管理師 (Case Manager)": {
-                    "focus": "資源導向。病患的社會心理支持系統、出院後的照顧計畫、是否需要長照資源轉介、轉院聯繫。",
-                    "tone": "溫和、強調整體性評估與後續追蹤。"
                 }
             }
 
@@ -298,12 +298,13 @@ elif app_mode == " 模板設計師":
         c1.selectbox(
             "1. 設定角色視角",
             [
-                "急診主治醫師 (VS)",
-                "住院醫師 (R)",
+                "加護病房護理師 (ICU Nurse)", 
+                "一般病房護理師 (Ward Nurse)",    
+                "傷口護理師 (Wound Care Nurse)",
                 "專科護理師 (NP)",
                 "急診護理師 (ER Nurse)",
-                "檢傷護理師 (Triage)",
-                "個案管理師 (Case Manager)"
+                "檢傷護理師 (Triage Nurse)"
+                
             ],
             key="role_type",
             on_change=update_draft
