@@ -311,7 +311,7 @@ elif app_mode == " 模板設計師":
         )
 
         c2.selectbox(
-            "2. 設定使用情境",
+            "2. 設定使用情境 ",
             [
                 "急診轉住院 (Admission Note)",
                 "急診出院/轉院 (Discharge Note)",
