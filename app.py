@@ -3,6 +3,7 @@
 import streamlit as st
 import os
 import pandas as pd
+import json
 from dotenv import load_dotenv
 from datetime import datetime, time
 
@@ -12,7 +13,7 @@ from db.template_service import get_all_templates, create_template, update_templ
 from ai.ai_summarizer import generate_nursing_summary
 
 # --- 設定網頁 ---
-st.set_page_config(page_title="AI 醫療模板系統", layout="wide")
+st.set_page_config(page_title="AI 醫療模板系統", layout="wide", page_icon="")
 
 # ==========================================
 # 輔助函數
@@ -73,21 +74,26 @@ if app_mode == " 摘要生成器":
     # 3. 呈現風格
     style_option = st.radio("呈現風格：", ["列點式 (Bullet Points)", "短文式 (Narrative)"], horizontal=True)
 
-    # 4. 關注點
+    # 4. 關注點 (修改為 Checkbox 清單 + 智慧預設)
     st.subheader("3. 重點關注項目")
     st.write("請勾選 **重點關注項目** (AI 將加強分析)：")
     
     focus_options = ["生命徵象趨勢", "檢驗報告異常值", "護理處置經過", "病患主訴", "管路狀況", "意識狀態(GCS)"]
-    selected_focus_areas = []
     
-    # 智慧預設勾選
+    # === 智慧預設勾選 (根據模板名稱自動判斷) ===
     default_focus = []
-    if "會診" in selected_template_name: default_focus = ["檢驗報告異常值", "生命徵象趨勢"]
-    elif "交班" in selected_template_name: default_focus = ["護理處置經過", "意識狀態(GCS)"]
-    elif "出院" in selected_template_name: default_focus = ["護理處置經過", "生命徵象趨勢"]
+    if "會診" in selected_template_name: 
+        default_focus = ["檢驗報告異常值", "生命徵象趨勢"]
+    elif "交班" in selected_template_name: 
+        default_focus = ["護理處置經過", "意識狀態(GCS)"]
+    elif "出院" in selected_template_name: 
+        default_focus = ["護理處置經過", "生命徵象趨勢"]
     
+    selected_focus_areas = []
+    # 使用 3 欄排列，讓版面更整齊
     cols = st.columns(3)
     for i, option in enumerate(focus_options):
+        # 檢查該選項是否在預設清單中
         is_checked = option in default_focus
         if cols[i % 3].checkbox(option, value=is_checked):
             selected_focus_areas.append(option)
@@ -152,32 +158,102 @@ elif app_mode == " 模板設計師":
     db_templates = get_all_templates()
     template_list = list(db_templates.keys())
 
-    tab_edit, tab_create = st.tabs([" 修改現有模板", " 建立新模板"])
+    # 修改：Tab 1 名稱改為「模板庫管理」
+    tab_library, tab_create = st.tabs([" 模板庫管理", " 建立新模板"])
 
-    # --- Tab 1: 修改 ---
-    with tab_edit:
+    # --- Tab 1: 模板庫管理 (含多格式匯出功能) ---
+    with tab_library:
         if not template_list:
-            st.warning("目前沒有任何模板。")
+            st.warning("目前資料庫中沒有任何模板。")
         else:
-            edit_target = st.selectbox("選擇要修改的模板：", template_list)
+            # 1. 顯示總覽
+            st.subheader(" 現有模板總覽")
+            st.write(f"目前系統中共有 **{len(template_list)}** 個自定義模板：")
             
-            # 讀取該模板內容
+            # 將模板清單製作成 DataFrame 顯示
+            df_templates = pd.DataFrame(list(db_templates.items()), columns=["模板名稱", "System Prompt 內容"])
+            st.dataframe(df_templates, use_container_width=True, hide_index=True)
+            
+            # === 新增功能：多格式匯出 ===
+            st.markdown("####  匯出模板庫")
+            export_col1, export_col2 = st.columns([1, 1])
+            
+            with export_col1:
+                export_format = st.selectbox(
+                    "選擇匯出格式：", 
+                    ["CSV (Excel)", "JSON (程式用)", "Markdown (文件)", "TXT (純文字)"]
+                )
+            
+            with export_col2:
+                # 根據選擇生成不同格式的資料
+                file_data = None
+                file_name = "templates_export"
+                mime_type = "text/plain"
+
+                if export_format == "CSV (Excel)":
+                    file_data = df_templates.to_csv(index=False).encode('utf-8-sig') # utf-8-sig 防止 Excel 亂碼
+                    file_name += ".csv"
+                    mime_type = "text/csv"
+                
+                elif export_format == "JSON (程式用)":
+                    file_data = json.dumps(db_templates, indent=4, ensure_ascii=False).encode('utf-8')
+                    file_name += ".json"
+                    mime_type = "application/json"
+                
+                elif export_format == "Markdown (文件)":
+                    md_text = "# AI 醫療摘要模板庫\n\n"
+                    for name, content in db_templates.items():
+                        md_text += f"## {name}\n```text\n{content}\n```\n\n---\n\n"
+                    file_data = md_text.encode('utf-8')
+                    file_name += ".md"
+                    mime_type = "text/markdown"
+
+                elif export_format == "TXT (純文字)":
+                    txt_text = "AI 醫療摘要模板庫\n====================\n\n"
+                    for name, content in db_templates.items():
+                        txt_text += f"模板名稱：{name}\n內容：\n{content}\n\n--------------------\n\n"
+                    file_data = txt_text.encode('utf-8')
+                    file_name += ".txt"
+                    mime_type = "text/plain"
+
+                # 為了版面整齊，加個空行
+                st.write("") 
+                if file_data:
+                    st.download_button(
+                        label=f"⬇ 下載 {export_format}",
+                        data=file_data,
+                        file_name=file_name,
+                        mime=mime_type,
+                        use_container_width=True
+                    )
+            # ==============================
+
+            st.divider()
+
+            # 2. 選擇修改
+            st.subheader(" 編輯模板")
+            
+            col_sel, col_space = st.columns([1, 1])
+            with col_sel:
+                edit_target = st.selectbox("請選擇要修改的模板：", template_list)
+            
+            # 讀取內容
             current_content = db_templates[edit_target]
             
+            # 編輯區塊
             with st.form("edit_form"):
-                st.write(f"正在編輯：**{edit_target}**")
-                new_content = st.text_area("模板內容 (System Prompt)", value=current_content, height=400)
+                st.write(f"**正在編輯：** `{edit_target}`")
+                new_content = st.text_area("模板內容 (System Prompt)", value=current_content, height=450)
                 
-                if st.form_submit_button(" 儲存修改"):
+                if st.form_submit_button(" 儲存修改", type="primary"):
                     if update_template(edit_target, new_content):
-                        st.success(f"模板「{edit_target}」已更新！")
+                        st.success(f"模板「{edit_target}」已成功更新！")
                         st.cache_data.clear() # 清除快取以顯示最新內容
                         st.rerun() # 重新整理頁面
                     else:
                         st.error("更新失敗，請檢查資料庫連線。")
 
-    # --- Tab 2: 新增 ---
-            # --- Tab 2: 新增 ---
+    # --- Tab 2: 建立新模板 (保持原樣) ---
     with tab_create:
         st.markdown("####  Prompt 快速產生器")
         st.caption("選擇以下參數，系統會即時生成專業的 System Prompt 草稿。")
